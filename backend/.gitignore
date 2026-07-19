@@ -1,7 +1,2 @@
-node_modules
-.env
-.env.*
-dist
-build
-*.log
-coverage
+backend/dist/*.zip
+*.zip
