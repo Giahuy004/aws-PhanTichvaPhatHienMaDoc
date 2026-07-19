@@ -1,5 +1,10 @@
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { DynamoDBClient, UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
+
 const s3Client = new S3Client({});
+const dynamoDBClient = new DynamoDBClient({});
+
+const { RESULTS_TABLE } = process.env;
 
 const SAFE_PATTERNS = [];
 const SUSPICIOUS_PATTERNS = ['eval', 'exec', 'document.write(', 'atob(', 'fromCharCode'];
@@ -57,7 +62,7 @@ exports.handler = async (event) => {
     const verdict = analyze(contentText, fileName);
     const detections = extractDetections(contentText);
 
-    return {
+    const result = {
       statusCode: 200,
       fileId,
       fileName,
@@ -70,6 +75,31 @@ exports.handler = async (event) => {
       detections,
       analyzedAt: new Date().toISOString(),
     };
+
+    // Update DynamoDB with final status
+    if (RESULTS_TABLE && fileId) {
+      try {
+        await dynamoDBClient.send(new UpdateItemCommand({
+          TableName: RESULTS_TABLE,
+          Key: { fileId: { S: String(fileId) } },
+          UpdateExpression: 'SET #status = :status, threatLevel = :threatLevel, threatType = :threatType, confidence = :confidence, detections = :detections, analyzedAt = :analyzedAt, updatedAt = :updatedAt',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: {
+            ':status': { S: result.status },
+            ':threatLevel': { S: verdict.threatLevel },
+            ':threatType': { S: verdict.threatType },
+            ':confidence': { N: String(verdict.confidence) },
+            ':detections': { L: detections.map(d => ({ S: d })) },
+            ':analyzedAt': { S: result.analyzedAt },
+            ':updatedAt': { S: new Date().toISOString() },
+          },
+        }));
+      } catch (err) {
+        console.error('Failed to update DynamoDB:', err);
+      }
+    }
+
+    return result;
   } catch (error) {
     console.error('RunAnalysis error:', error);
     return {
