@@ -1,2 +1,9 @@
-backend/dist/*.zip
+node_modules
+.env
+.env.*
+dist
+build
+*.log
 *.zip
+coverage
+.dynamodb-local/
