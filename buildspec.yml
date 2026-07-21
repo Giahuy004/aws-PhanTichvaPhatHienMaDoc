@@ -1,0 +1,83 @@
+version: 0.2
+
+env:
+  variables:
+    # Tên S3 Bucket để lưu SAM artifacts khi deploy
+    SAM_BUCKET: "malware-detection-sam-artifacts"
+    # Tên CloudFormation stack
+    STACK_NAME: "malware-detection-backend"
+    # AWS Region triển khai
+    AWS_DEFAULT_REGION: "ap-southeast-1"
+    # Môi trường deploy (dev / staging / prod)
+    ENVIRONMENT: "dev"
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo "=========================================="
+      - echo "Phase 1 - INSTALL - Cai dat dependencies"
+      - echo "=========================================="
+      # Cài đặt AWS SAM CLI
+      - pip install aws-sam-cli
+      # Cài đặt dependencies cho Backend
+      - cd backend
+      - npm install
+      - cd ..
+
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "Phase 2 - PRE_BUILD - Kiem tra truoc khi build"
+      - echo "=========================================="
+      # Kiểm tra phiên bản SAM CLI
+      - sam --version
+      - node --version
+      - npm --version
+      # Chạy lint kiểm tra code (nếu có)
+      # - cd backend && npm run lint && cd ..
+
+  build:
+    commands:
+      - echo "=========================================="
+      - echo "Phase 3 - BUILD - Build ung dung Backend"
+      - echo "=========================================="
+      # Build SAM application
+      - cd backend
+      - sam build --template-file template.yaml
+      - cd ..
+      - echo "Build thanh cong!"
+
+  post_build:
+    commands:
+      - echo "=========================================="
+      - echo "Phase 4 - POST_BUILD - Deploy len AWS"
+      - echo "=========================================="
+      # Package SAM application (đóng gói và upload lên S3)
+      - cd backend
+      - sam package
+          --template-file .aws-sam/build/template.yaml
+          --output-template-file packaged.yaml
+          --s3-bucket $SAM_BUCKET
+      # Deploy SAM application lên AWS CloudFormation
+      - sam deploy
+          --template-file packaged.yaml
+          --stack-name $STACK_NAME
+          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
+          --parameter-overrides Environment=$ENVIRONMENT
+          --no-confirm-changeset
+          --no-fail-on-empty-changeset
+      - cd ..
+      - echo "Deploy thanh cong!"
+
+artifacts:
+  files:
+    - backend/packaged.yaml
+    - backend/template.yaml
+  discard-paths: no
+
+cache:
+  paths:
+    # Cache node_modules để build nhanh hơn ở lần sau
+    - 'backend/node_modules/**/*'
